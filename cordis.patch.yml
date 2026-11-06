@@ -1,0 +1,7 @@
+# dsh-plugin-updates — read-only update intelligence for the agent
+#
+# Loading the profile inserts one row: entry id plugin-updates, module is the
+# package name. No config surface, so no config block.
+- insert:
+    - id: plugin-updates
+      name: dsh-plugin-updates
