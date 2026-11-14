@@ -237,6 +237,87 @@ test('renderScan keeps the quiet bundles on one line', () => {
 	assert.ok(text.split('\n').length <= 4)
 })
 
+test('decideNpm: unknown runtime is not a mismatch; verdict runtime_unknown, no unverified claim', () => {
+	const row = decideNpm(
+		'dsh-better-sidebar',
+		{ raw: '0.30.1', kind: 'range', version: '0.30.1' },
+		[{ version: '0.32.1', dshPeers: { '@deepseek-ai/dsh-llm': '^0.2.2-rc.2' } }],
+		'0.32.1',
+		'unknown',
+		'registry',
+	)
+	assert.equal(row.verdict, 'runtime_unknown')
+	assert.equal(row.gate, 'unknown')
+	assert.ok(row.note === undefined || !/不含此 runtime|裝不上/.test(row.note))
+})
+
+test('decideNpm: unknown runtime with installed==latest is runtime_unknown, not installed_blocked', () => {
+	const row = decideNpm(
+		'dsh-rich-ui',
+		{ raw: '0.6.2', kind: 'range', version: '0.6.2' },
+		[{ version: '0.6.2', dshPeers: { '@deepseek-ai/dsh-llm': '^0.2.2-rc.2' } }],
+		'0.6.2',
+		'unknown',
+		'registry',
+	)
+	assert.equal(row.verdict, 'runtime_unknown')
+	assert.equal(row.gate, 'unknown')
+})
+
+test('scanProfile: unknown runtime flags peer-gated rows runtime_unknown and never claims a mismatch', async () => {
+	const peer = { '@deepseek-ai/dsh-llm': '^0.2.2-rc.2' }
+	const profile = {
+		installed: true,
+		dependencies: {
+			'peer-newer': { raw: '0.30.1', kind: 'range', version: '0.30.1' },
+			'peer-same': { raw: '0.6.2', kind: 'range', version: '0.6.2' },
+		},
+		bundles: [],
+	}
+	const result = await scanProfile({
+		profile,
+		runtimeVersion: 'unknown',
+		market: fakeMarket({}),
+		registry: fakeRegistry({
+			'peer-newer': { found: true, latest: '0.32.1', versions: [
+				{ version: '0.30.1', dshPeers: peer },
+				{ version: '0.32.1', dshPeers: peer },
+			] },
+			'peer-same': { found: true, latest: '0.6.2', versions: [{ version: '0.6.2', dshPeers: peer }] },
+		}),
+		git: fakeGit({}),
+	})
+	const byName = new Map(result.rows.map((row) => [row.name, row]))
+	assert.equal(byName.get('peer-newer').verdict, 'runtime_unknown')
+	assert.equal(byName.get('peer-same').verdict, 'runtime_unknown')
+	const text = renderScan(result)
+	assert.ok(!text.includes('不含此 runtime'))
+	assert.ok(!text.includes('裝不上'))
+	assert.match(text, /RUNTIME_UNKNOWN/)
+})
+
+test('official rows carry no spec and no =unknown label when the runtime is unknown', async () => {
+	const profile = {
+		installed: true,
+		dependencies: { '@deepseek-ai/dsh-base': { raw: '0.2.2-rc.1', kind: 'range', version: undefined } },
+		bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+	}
+	const result = await scanProfile({
+		profile,
+		runtimeVersion: 'unknown',
+		market: fakeMarket({}),
+		registry: fakeRegistry({}),
+		git: fakeGit({}),
+	})
+	const byName = new Map(result.rows.map((row) => [row.name, row]))
+	assert.equal(byName.get('@deepseek-ai/dsh-base').spec, undefined)
+	assert.equal(byName.get('@deepseek-ai/dsh-base').latest, undefined)
+	const text = renderScan(result)
+	// official rows are quiet: the label lists the names, never `=unknown`
+	assert.ok(!text.includes('=unknown'))
+	assert.match(text, /up to date \(2\): @deepseek-ai\/dsh-base, @deepseek-ai\/dsh-web-app/)
+})
+
 test('renderPackage lists gate verdicts per version and truncates', () => {
 	const versions = Array.from({ length: 25 }, (_unused, index) => ({
 		version: `1.${index}.0`,
