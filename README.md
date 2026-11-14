@@ -8,7 +8,7 @@
 
 ## 功能
 
-- **plugin_updates（action=scan）** — 對 profile 裡每個 bundle 回報：已裝版本、上游最新版、判定（`outdated`／`behind_gate`＝有新版但最新版會被相容閘門擋、給最高可裝版／`blocked_upstream`／`installed_blocked`／`local_source`／`channel_failed`），以及可直接使用的 spec（如 `dsh-md-studio@1.3.4` 或 `github:owner/repo#v0.5.7`）。
+- **plugin_updates（action=scan）** — 對 profile 裡每個 bundle 回報：已裝版本、上游最新版、判定（`outdated`／`behind_gate`＝有新版但最新版會被相容閘門擋、給最高可裝版／`blocked_upstream`／`installed_blocked`／`local_source`／`channel_failed`／`runtime_unknown`＝host 版本取不到、相容性未檢查（不是判定失敗）），以及可直接使用的 spec（如 `dsh-md-studio@1.3.4` 或 `github:owner/repo#v0.5.7`）。
 - **plugin_updates（action=package）** — 列單一 npm 套件的所有版本與各自的 `engines.dsh` 範圍，用來挑升級目標。
 - **只讀** — 不安裝、不改 profile、不寫任何檔案；安裝照舊走 plugin_manager 的審批流程。
 
@@ -36,6 +36,7 @@
 - `BEHIND_GATE` 列代表最新版在目前的 DSH 版本裝不上，但有一個較舊、仍可裝的版本——spec 給的就是那個。
 - `BLOCKED_UPSTREAM`／`INSTALLED_BLOCKED` 列代表要等 upstream 發新版，或需要你明確授權版本豁免。
 - `LOCAL_SOURCE` 列（`link:`／`file:`）沒有 upstream，更新取決於你自己的源目錄。
+- `RUNTIME_UNKNOWN` 列代表 host 版本取不到（`DSH_VERSION` 未設、`profileContext` 也沒有），所以沒做相容性比對——不是判定失敗；傳 `hostVersion` 即可判定。
 
 想深挖單一套件：「看看 dsh-ops 有哪些版本裝得上」→ `action=package`。
 
@@ -45,7 +46,7 @@
 | --- | --- | --- |
 | 「讀不到 profile」 | profile 不在 `~/.dsh/profiles` 或有多个且無法判定 | 呼叫時傳 `profileDir` 指向含 `package.json` 的 profile 目錄 |
 | 大量 `CHANNEL_FAILED` | 網路／registry 連不上，market index 也掛了 | 網路恢復後加 `refresh: true` 重掃 |
-| 判定全是 `unknown` | 拿不到 runtime 版本 | 傳 `hostVersion`（執行中 DSH 的版本號） |
+| 有宣告 `engines.dsh`／`@deepseek-ai/dsh*` peers 的列全是 `runtime_unknown` | 拿不到 runtime 版本（`DSH_VERSION` 未設定且 `profileContext` 也沒有 anchor） | 傳 `hostVersion`（執行中 DSH 的版本號） |
 | market 資料過舊 | 索引快取 TTL 1 小時 | `refresh: true` 強制重抓 |
 
 ## 運作原理

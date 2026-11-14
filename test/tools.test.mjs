@@ -103,3 +103,131 @@ test('package action falls from registry to the market index', async () => {
 	const gone = await tool.execute({ action: 'package', name: 'absent-pkg' })
 	assert.match(gone, /查無資料/)
 })
+
+test('an unreadable installation anchor still falls back to DSH_INSTALL_DIR in shell contexts', async (t) => {
+	const { root, profile } = await makeProfileDir()
+	t.after(async () => {
+		await rm(root, { recursive: true, force: true })
+	})
+	const dir = join(root, 'fake-install')
+	const anchor = join(root, 'install', 'package.json')
+	const tool = createUpdatesTool({
+		env: { DSH_INSTALL_DIR: dir },
+		readJson: (path) => {
+			if (path === anchor) throw new Error('ENOENT')
+			assert.equal(path, join(dir, 'package.json'))
+			return { name: '@deepseek-ai/dsh', version: '0.2.2-rc.8' }
+		},
+		resolveInstallAnchor: () => anchor,
+		market: fakeMarket,
+		registry: fakeRegistry,
+		git: fakeGit,
+	})
+	const text = await tool.execute({ action: 'scan', profileDir: profile })
+	assert.match(text, /runtime 0\.2\.2-rc\.8 ·/)
+})
+
+test('runtime resolves from the profileContext installation anchor when DSH_VERSION is unset', async (t) => {
+	const { root, profile } = await makeProfileDir()
+	t.after(async () => {
+		await rm(root, { recursive: true, force: true })
+	})
+	const anchor = join(root, 'install', 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
+	const tool = createUpdatesTool({
+		// The real host process has no DSH_INSTALL_DIR: it is a shell overlay only.
+		env: { DSH_HOME: join(root, 'dsh-home') },
+		readJson: (path) => {
+			assert.equal(path, anchor)
+			return { name: '@deepseek-ai/dsh', version: '0.2.2-rc.3' }
+		},
+		resolveInstallAnchor: () => anchor,
+		market: fakeMarket,
+		registry: fakeRegistry,
+		git: fakeGit,
+	})
+	const text = await tool.execute({ action: 'scan', profileDir: profile })
+	assert.match(text, /runtime 0\.2\.2-rc\.3 ·/)
+})
+
+test('an unreadable installation anchor stays runtime unknown', async (t) => {
+	const { root, profile } = await makeProfileDir()
+	t.after(async () => {
+		await rm(root, { recursive: true, force: true })
+	})
+	const tool = createUpdatesTool({
+		env: {},
+		readJson: () => {
+			throw new Error('ENOENT')
+		},
+		resolveInstallAnchor: () => join(root, 'install', 'package.json'),
+		market: fakeMarket,
+		registry: fakeRegistry,
+		git: fakeGit,
+	})
+	const text = await tool.execute({ action: 'scan', profileDir: profile })
+	assert.match(text, /runtime unknown ·/)
+})
+
+test('an installation anchor that is not the DSH package is ignored', async (t) => {
+	const { root, profile } = await makeProfileDir()
+	t.after(async () => {
+		await rm(root, { recursive: true, force: true })
+	})
+	const tool = createUpdatesTool({
+		env: {},
+		readJson: () => ({ name: 'left-pad', version: '9.9.9' }),
+		resolveInstallAnchor: () => join(root, 'install', 'package.json'),
+		market: fakeMarket,
+		registry: fakeRegistry,
+		git: fakeGit,
+	})
+	const text = await tool.execute({ action: 'scan', profileDir: profile })
+	assert.match(text, /runtime unknown ·/)
+})
+
+test('DSH_INSTALL_DIR still resolves in shell contexts that have no anchor', async (t) => {
+	const { root, profile } = await makeProfileDir()
+	t.after(async () => {
+		await rm(root, { recursive: true, force: true })
+	})
+	const dir = join(root, 'fake-install')
+	const tool = createUpdatesTool({
+		env: { DSH_INSTALL_DIR: dir },
+		readJson: (path) => {
+			assert.equal(path, join(dir, 'package.json'))
+			return { name: '@deepseek-ai/dsh', version: '0.2.2-rc.8' }
+		},
+		market: fakeMarket,
+		registry: fakeRegistry,
+		git: fakeGit,
+	})
+	const text = await tool.execute({ action: 'scan', profileDir: profile })
+	assert.match(text, /runtime 0\.2\.2-rc\.8 ·/)
+})
+
+test('runtime precedence: hostVersion, then DSH_VERSION, then the installation anchor', async (t) => {
+	const { root, profile } = await makeProfileDir()
+	t.after(async () => {
+		await rm(root, { recursive: true, force: true })
+	})
+	const anchor = join(root, 'install', 'package.json')
+	const readJson = () => ({ name: '@deepseek-ai/dsh', version: '0.2.2-rc.9' })
+	const byArg = createUpdatesTool({
+		env: { DSH_VERSION: '0.2.2-rc.1' },
+		readJson,
+		resolveInstallAnchor: () => anchor,
+		market: fakeMarket,
+		registry: fakeRegistry,
+		git: fakeGit,
+	})
+	assert.match(await byArg.execute({ action: 'scan', profileDir: profile, hostVersion: '3.0.0' }), /runtime 3\.0\.0 ·/)
+	const byEnv = createUpdatesTool({
+		env: { DSH_VERSION: '0.2.2-rc.1' },
+		readJson,
+		resolveInstallAnchor: () => anchor,
+		market: fakeMarket,
+		registry: fakeRegistry,
+		git: fakeGit,
+	})
+	assert.match(await byEnv.execute({ action: 'scan', profileDir: profile }), /runtime 0\.2\.2-rc\.1 ·/)
+})
