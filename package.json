@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-updates",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read-only update intelligence for the agent: per-bundle latest version, engines.dsh gate verdict, and an install-ready spec, resolved from market indexes, npm registry, and git tags.",
   "type": "module",
   "main": "./lib/index.js",
